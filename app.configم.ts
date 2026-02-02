@@ -54,9 +54,6 @@ const config: ExpoConfig = {
   jsEngine: "hermes",
   extra: {
     isRTL: true,
-    eas: {
-      projectId: "a0df9629-8aee-4e39-b691-7f40e360817b"
-    }
   },
   ios: {
     supportsTablet: true,
@@ -98,8 +95,15 @@ const config: ExpoConfig = {
     favicon: "./assets/images/favicon.png",
     lang: "ar",
     dir: "rtl",
-  },
+  }, 
   plugins: [
+    "expo": [
+    "extra": {
+      "eas": {
+        "projectId": "a0df9629-8aee-4e39-b691-7f40e360817b"
+      }
+    }
+  ]
     "expo-router",
     [
       "expo-audio",
@@ -133,13 +137,13 @@ const config: ExpoConfig = {
           buildArchs: ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
         },
-      },
-    ],
-  ],
+      },  
+  ],   
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },
+],
 };
 
 export default config;

@@ -378,8 +378,8 @@ export default function SettingsScreen() {
         <View className="bg-surface rounded-2xl p-4 mb-4 border border-border">
           <Text className="text-lg font-bold text-foreground mb-2">معلومات التطبيق</Text>
           <Text className="text-muted text-sm mb-1">الإصدار: 1.0.0</Text>
-          <Text className="text-muted text-sm mb-1">التطبيق: SELRS</Text>
-          <Text className="text-muted text-sm">نظام محاسبة الخزينة والسلف والقروض</Text>
+          <Text className="text-muted text-sm mb-1">SELRS</Text>
+          <Text className="text-muted text-sm">عيون الشروق للخدمات الطبيه</Text>
         </View>
 
         {/* Help Text */}
