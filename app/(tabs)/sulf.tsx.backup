@@ -1,0 +1,223 @@
+import { useEffect, useState, useCallback } from "react";
+import {
+  Text,
+  View,
+  TouchableOpacity,
+  FlatList,
+  Alert,
+  RefreshControl,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+
+import { ScreenContainer } from "@/components/screen-container";
+import { trpc } from "@/lib/trpc";
+
+type SulfItem = {
+  id: number;
+  name: string;
+  loanAmount: number;
+  paidAmount: number;
+  date: Date;
+  notes: string | null;
+};
+
+const SYNC_FILE_KEY = "sulf_sync_file";
+
+export default function SulfScreen() {
+  const [syncFilePath, setSyncFilePath] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch data from server
+  const { data: sulfData, refetch, isLoading } = trpc.sulf.getAll.useQuery();
+
+  const importMutation = trpc.sulf.importFromCSV.useMutation();
+  const deleteMutation = trpc.sulf.deleteAll.useMutation();
+
+  // Load sync file path from storage
+  useEffect(() => {
+    loadSyncFilePath();
+  }, []);
+
+  // Auto-sync on app open
+  useEffect(() => {
+    if (syncFilePath) {
+      autoSync();
+    }
+  }, [syncFilePath]);
+
+  const loadSyncFilePath = async () => {
+    try {
+      const path = await AsyncStorage.getItem(SYNC_FILE_KEY);
+      if (path) {
+        setSyncFilePath(path);
+      }
+    } catch (error) {
+      console.error("Error loading sync file path:", error);
+    }
+  };
+
+  const autoSync = async () => {
+    if (!syncFilePath) return;
+
+    try {
+      setSyncStatus("جاري المزامنة...");
+      const content = await FileSystem.readAsStringAsync(syncFilePath);
+      
+      // Clear existing data first
+      await deleteMutation.mutateAsync();
+      
+      // Import new data
+      const result = await importMutation.mutateAsync({
+        csvContent: content,
+      });
+
+      setSyncStatus(`تم المزامنة: ${result.imported} سجل`);
+      refetch();
+    } catch (error) {
+      setSyncStatus("فشل المزامنة");
+      console.error("Auto sync error:", error);
+    }
+  };
+
+  const selectSyncFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        await AsyncStorage.setItem(SYNC_FILE_KEY, file.uri);
+        setSyncFilePath(file.uri);
+        Alert.alert("تم", "تم تحديد ملف المزامنة بنجاح");
+      }
+    } catch (error) {
+      Alert.alert("خطأ", "فشل في اختيار الملف");
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (syncFilePath) {
+      await autoSync();
+    } else {
+      await refetch();
+    }
+    setRefreshing(false);
+  }, [syncFilePath]);
+
+  const formatNumber = (num: number) => {
+    return num.toLocaleString("ar-EG");
+  };
+
+  const formatDate = (dateVal: Date | string) => {
+    const date = typeof dateVal === "string" ? new Date(dateVal) : dateVal;
+    return date.toLocaleDateString("ar-EG");
+  };
+
+  // Calculate totals
+  const totals = sulfData?.reduce(
+    (acc: { totalLoan: number; totalPaid: number; remaining: number }, item: SulfItem) => ({
+      totalLoan: acc.totalLoan + item.loanAmount,
+      totalPaid: acc.totalPaid + item.paidAmount,
+      remaining: acc.remaining + (item.loanAmount - item.paidAmount),
+    }),
+    { totalLoan: 0, totalPaid: 0, remaining: 0 }
+  ) || { totalLoan: 0, totalPaid: 0, remaining: 0 };
+
+  const renderItem = ({ item }: { item: SulfItem }) => (
+    <View className="bg-surface p-4 mb-2 rounded-lg border border-border">
+      <View className="flex-row justify-between mb-2">
+        <Text className="text-foreground font-bold text-lg">{item.name}</Text>
+        <Text className="text-muted text-sm">{formatDate(item.date)}</Text>
+      </View>
+      <View className="flex-row justify-between mb-1">
+        <Text className="text-error">السلفة: {formatNumber(item.loanAmount)}</Text>
+        <Text className="text-success">السداد: {formatNumber(item.paidAmount)}</Text>
+      </View>
+      <View className="flex-row justify-between">
+        <Text className="text-primary font-bold">
+          المتبقي: {formatNumber(item.loanAmount - item.paidAmount)}
+        </Text>
+      </View>
+      {item.notes && (
+        <Text className="text-muted text-sm mt-2">{item.notes}</Text>
+      )}
+    </View>
+  );
+
+  return (
+    <ScreenContainer className="p-4">
+      {/* Header */}
+      <View className="items-center mb-4">
+        <Text className="text-3xl font-bold text-foreground">SELRS</Text>
+        <Text className="text-muted">السلف</Text>
+      </View>
+
+      {/* Sync Status */}
+      {syncStatus && (
+        <View className="bg-surface p-2 rounded-lg mb-4">
+          <Text className="text-center text-muted">{syncStatus}</Text>
+        </View>
+      )}
+
+      {/* Sync File Button */}
+      <TouchableOpacity
+        onPress={selectSyncFile}
+        className="bg-primary p-3 rounded-lg mb-4"
+      >
+        <Text className="text-white text-center font-bold">
+          {syncFilePath ? "تغيير ملف المزامنة" : "اختيار ملف المزامنة"}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Summary Cards */}
+      <View className="flex-row justify-between mb-4">
+        <View className="flex-1 bg-error/20 p-3 rounded-lg mx-1">
+          <Text className="text-error text-center text-sm">إجمالي السلف</Text>
+          <Text className="text-error text-center font-bold">
+            {formatNumber(totals.totalLoan)}
+          </Text>
+        </View>
+        <View className="flex-1 bg-success/20 p-3 rounded-lg mx-1">
+          <Text className="text-success text-center text-sm">إجمالي السداد</Text>
+          <Text className="text-success text-center font-bold">
+            {formatNumber(totals.totalPaid)}
+          </Text>
+        </View>
+        <View className="flex-1 bg-primary/20 p-3 rounded-lg mx-1">
+          <Text className="text-primary text-center text-sm">المتبقي</Text>
+          <Text className="text-primary text-center font-bold">
+            {formatNumber(totals.remaining)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Count */}
+      <View className="bg-surface p-3 rounded-lg mb-4">
+        <Text className="text-center text-foreground">
+          عدد السجلات: {sulfData?.length || 0}
+        </Text>
+      </View>
+
+      {/* List */}
+      <FlatList
+        data={sulfData || []}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        ListEmptyComponent={
+          <View className="items-center py-8">
+            <Text className="text-muted">لا توجد سجلات</Text>
+          </View>
+        }
+      />
+    </ScreenContainer>
+  );
+}
